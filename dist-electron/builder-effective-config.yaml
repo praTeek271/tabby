@@ -1,0 +1,22 @@
+directories:
+  output: dist-electron
+  buildResources: build
+appId: com.prateek271.tabby
+productName: Tabby
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+files:
+  - filter:
+      - dist/**/*
+      - electron/**/*
+      - package.json
+      - firebase-applet-config.json
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+win:
+  target: nsis
+  icon: build/icon.ico
+linux:
+  target: AppImage
+  icon: build/icon.png
+electronVersion: 42.0.1

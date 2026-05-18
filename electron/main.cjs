@@ -17,9 +17,40 @@ if (!gotTheLock) {
   let mainWindow;
 
   function createWindow() {
+    // Determine appropriate icon path depending on environment and platform
+    let iconExt = 'png';
+    if (process.platform === 'win32') iconExt = 'ico';
+    else if (process.platform === 'darwin') iconExt = 'icns';
+
+    let iconPath;
+    if (isDev) {
+      iconPath = path.join(process.cwd(), 'icon', `icon.${iconExt}`);
+      if (!fs.existsSync(iconPath)) {
+        iconPath = path.join(process.cwd(), 'icon', 'icon.png');
+      }
+    } else {
+      iconPath = path.join(__dirname, `../dist/icon.${iconExt}`);
+      if (!fs.existsSync(iconPath)) {
+        iconPath = path.join(__dirname, '../dist/icon.png');
+      }
+    }
+    
+    // Fallback if the icon wasn't explicitly put there
+    if (!fs.existsSync(iconPath)) {
+      iconPath = path.join(__dirname, `../public/icon.${iconExt}`);
+      if (!fs.existsSync(iconPath)) iconPath = path.join(__dirname, '../public/icon.png');
+      if (!isDev) {
+        iconPath = path.join(__dirname, `../dist/icon.${iconExt}`);
+        if (!fs.existsSync(iconPath)) iconPath = path.join(__dirname, '../dist/icon.png');
+      }
+      // if not found, let it be undefined
+      if (!fs.existsSync(iconPath)) iconPath = undefined;
+    }
+
     mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
+      icon: iconPath,
       autoHideMenuBar: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
