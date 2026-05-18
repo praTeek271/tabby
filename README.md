@@ -68,11 +68,6 @@ To get started with local development, clone the repository and install dependen
    npm install
    ```
 
-3. **Environment Setup:**
-   Copy `.env.example` to `.env` and fill in your Firebase / Google Workspace API credentials.
-   ```bash
-   cp .env.example .env
-   ```
 
 ### Running the App
 
