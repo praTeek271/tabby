@@ -14,6 +14,10 @@
     "electron:start": "electron .",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on tcp:3000 && npm run electron:start\"",
     "electron:build": "npm run build && electron-builder",
+    "electron:build:mac": "npm run build && electron-builder --mac",
+    "electron:build:win": "npm run build && electron-builder --win",
+    "electron:build:linux": "npm run build && electron-builder --linux",
+    "electron:build:all": "npm run build && electron-builder -mwl",
     "pre-build": "node scripts/prepare-icons.cjs",
     "build": "vite build",
     "preview": "vite preview",
@@ -23,6 +27,7 @@
   "build": {
     "appId": "com.prateek271.tabby",
     "productName": "Tabby",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist-electron"
     },

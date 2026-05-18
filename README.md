@@ -97,7 +97,17 @@ npm run build
 ```
 
 **Desktop Packages:**
-Builds native desktop installers (Mac `.dmg`, Linux `AppImage`, Windows `.exe`) in the `dist-electron/` folder.
+Builds native desktop installers (Mac `.dmg`, Linux `AppImage`, Windows `.exe`) in the `dist-electron/` folder. The generated installers will automatically include the application version in their filenames (e.g., `Tabby-2.2.0-mac-x64.dmg`).
+
+To build for specific platforms, use the following commands:
+```bash
+npm run electron:build:mac    # Build for macOS (.dmg, .zip)
+npm run electron:build:win    # Build for Windows (.exe)
+npm run electron:build:linux  # Build for Linux (.AppImage)
+npm run electron:build:all    # Build for all platforms
+```
+
+Or you can use the default command to build for your current host system:
 ```bash
 npm run electron:build
 ```
