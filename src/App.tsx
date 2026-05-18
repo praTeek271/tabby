@@ -38,6 +38,18 @@ import {
   Undo2,
   Redo2,
   Search,
+  Lock,
+  Wand2,
+  Bold,
+  Italic,
+  Strikethrough,
+  List as ListIcon,
+  CheckSquare,
+  Heading1,
+  Heading2,
+  Table,
+  Code,
+  Quote,
 } from "lucide-react";
 import {
   auth,
@@ -117,6 +129,7 @@ const App = () => {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState<"notes" | "format">("notes");
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
@@ -125,6 +138,19 @@ const App = () => {
   const [activeDropdown, setActiveDropdown] = useState<"view" | "color" | null>(
     null,
   );
+
+  useEffect(() => {
+    if (notes.length === 0 && sidebarMode === "format") {
+       setSidebarMode("notes");
+    }
+    if (notes.length === 0 && isFocusMode) {
+      setIsFocusMode(false);
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch((err) => console.log(err));
+      }
+    }
+  }, [notes.length, sidebarMode, isFocusMode]);
+
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">(
     "saved",
   );
@@ -153,6 +179,76 @@ const App = () => {
     { start: number; end: number }[]
   >([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+
+  const applyFormat = (
+    prefix: string,
+    suffix: string = "",
+    defaultText: string = "",
+  ) => {
+    const activeNote = notes.find((n) => n.id === activeNoteId);
+    if (!activeNote) return;
+
+    let el: HTMLInputElement | HTMLTextAreaElement | null = null;
+    let isTitle = false;
+
+    if (document.activeElement === titleInputRef.current && titleInputRef.current) {
+      el = titleInputRef.current;
+      isTitle = true;
+    } else if (document.activeElement === textAreaRef.current && textAreaRef.current) {
+      el = textAreaRef.current;
+    } else {
+      // Fallback to textArea if neither is explicitly focused 
+      el = textAreaRef.current;
+    }
+
+    if (!el || el.selectionStart === undefined || el.selectionStart === null) return;
+
+    const startPos = el.selectionStart;
+    const endPos = el.selectionEnd || startPos;
+    const text = el.value || "";
+    
+    let actualPrefix = prefix;
+    let actualSuffix = suffix;
+    
+    // For line-based formatting (prefix starts with \n but we don't want \n if we are already at the start of a line)
+    if (actualPrefix.startsWith("\n")) {
+      const isStartOfLine = startPos === 0 || text[startPos - 1] === "\n";
+      if (isStartOfLine) {
+        actualPrefix = actualPrefix.substring(1); // remove the leading \n
+      }
+    }
+    
+    const selected =
+      startPos !== endPos ? text.substring(startPos, endPos) : defaultText;
+    
+    const newFieldText =
+      text.substring(0, startPos) +
+      actualPrefix +
+      selected +
+      actualSuffix +
+      text.substring(endPos);
+
+    // reconstruct content
+    let newContent = "";
+    if (isTitle) {
+      newContent = newFieldText + (body ? "\n\n" + body : "\n\n");
+    } else {
+      newContent = title + "\n\n" + newFieldText;
+    }
+
+    handleUpdateNote(activeNote.id, { content: newContent });
+
+    setTimeout(() => {
+      if (el) {
+        el.focus();
+        const newCursorPos = startPos + actualPrefix.length + selected.length;
+        el.setSelectionRange(
+          startPos + actualPrefix.length,
+          newCursorPos,
+        );
+      }
+    }, 0);
+  };
 
   // History State
   const [history, setHistory] = useState<
@@ -305,16 +401,16 @@ const App = () => {
                 setActiveNoteId(parsed[0].id);
               }
             } else {
-              setNotes([DEFAULT_NOTE]);
-              setActiveNoteId(DEFAULT_NOTE.id);
+              setNotes([]);
+              setActiveNoteId("");
             }
           } else {
-            setNotes([DEFAULT_NOTE]);
-            setActiveNoteId(DEFAULT_NOTE.id);
+            setNotes([]);
+            setActiveNoteId("");
           }
         } catch (e) {
-          setNotes([DEFAULT_NOTE]);
-          setActiveNoteId(DEFAULT_NOTE.id);
+          setNotes([]);
+          setActiveNoteId("");
         }
       }
     });
@@ -355,24 +451,8 @@ const App = () => {
               }
             });
         } else {
-          // Create initial note in DB
-          const newDocId = crypto.randomUUID();
-          const initialNote: Note = {
-            ...DEFAULT_NOTE,
-            id: newDocId,
-            userId: user.uid,
-            timestamp: Date.now(),
-          };
-          setDoc(
-            doc(db, `users/${user.uid}/notes/${newDocId}`),
-            initialNote,
-          ).catch((e) => {
-            handleFirestoreError(
-              e,
-              OperationType.CREATE,
-              `users/${user.uid}/notes/${newDocId}`,
-            );
-          });
+          setNotes([]);
+          setActiveNoteId("");
         }
       },
       (error) => {
@@ -389,11 +469,11 @@ const App = () => {
 
   // Save local changes explicitly (Auto-save) if not logged in
   useEffect(() => {
-    if (!user && notes.length > 0) {
+    if (!user && isAppLoaded) {
       const data = JSON.stringify(notes);
       window.electronAPI?.writeWorkspaceData({ filename: "notes.json", data });
     }
-  }, [notes, user]);
+  }, [notes, user, isAppLoaded]);
 
   useEffect(() => {
     if (activeNoteId) {
@@ -583,11 +663,13 @@ const App = () => {
   }, [activeNote?.content, activeNote?.id]);
 
   const handleCreateNote = useCallback(async () => {
+    setSidebarMode("notes");
+
     const newNoteId = user ? crypto.randomUUID() : `local-${Date.now()}`;
     const newNote: Note = {
       id: newNoteId,
       userId: user ? user.uid : "local",
-      content: "",
+      content: "Untitled\n\n",
       timestamp: Date.now(),
       color: COLORS.accent,
       viewMode: "text",
@@ -731,14 +813,14 @@ const App = () => {
 
   const handleDeleteNote = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (notes.length <= 1) return;
 
     if (user) {
       try {
         await deleteDoc(doc(db, `users/${user.uid}/notes/${id}`));
         const newNotes = notes.filter((n) => n.id !== id);
-        if (activeNoteId === id && newNotes.length > 0)
-          setActiveNoteId(newNotes[0].id);
+        if (activeNoteId === id) {
+          setActiveNoteId(newNotes.length > 0 ? newNotes[0].id : "");
+        }
       } catch (err) {
         handleFirestoreError(
           err,
@@ -749,8 +831,9 @@ const App = () => {
     } else {
       const newNotes = notes.filter((n) => n.id !== id);
       setNotes(newNotes);
-      if (activeNoteId === id && newNotes.length > 0)
-        setActiveNoteId(newNotes[0].id);
+      if (activeNoteId === id) {
+        setActiveNoteId(newNotes.length > 0 ? newNotes[0].id : "");
+      }
     }
   };
 
@@ -1109,6 +1192,7 @@ const App = () => {
 
   // --- RESIZE LOGIC ---
   const startResizing = (e: React.MouseEvent) => {
+    if (sidebarMode === "format") return;
     setIsResizing(true);
     e.preventDefault();
   };
@@ -1382,12 +1466,7 @@ const App = () => {
       </div>
     );
 
-  if (!activeNote)
-    return (
-      <div className="h-screen w-screen flex items-center justify-center bg-main text-accent">
-        <Loader2 className="animate-spin" />
-      </div>
-    );
+
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden font-mono selection:bg-accent-mute selection:text-primary relative bg-main text-primary transition-colors duration-200">
@@ -1551,15 +1630,17 @@ const App = () => {
         </div>
 
         <div className="flex gap-4 text-[10px] uppercase tracking-[0.2em] opacity-60 items-center text-primary">
-          <Tooltip text="Focus Mode (Esc to exit)" position="bottom">
+          <Tooltip text={notes.length === 0 ? "No notes to focus on" : "Focus Mode (Esc to exit)"} position="bottom">
             <button
               onClick={() => {
+                if (notes.length === 0) return;
                 setIsFocusMode(true);
                 document.documentElement
                   .requestFullscreen()
                   .catch((e) => console.log("Fullscreen failed:", e));
               }}
-              className="hover:text-accent flex items-center gap-2 transition-colors cursor-pointer active:scale-95 px-3 py-1.5 rounded-lg border border-transparent hover:border-border-color/50 hover:bg-black/10 font-bold"
+              disabled={notes.length === 0}
+              className={`flex items-center gap-2 transition-colors cursor-pointer active:scale-95 px-3 py-1.5 rounded-lg border border-transparent font-bold ${notes.length === 0 ? "opacity-30 cursor-not-allowed" : "hover:text-accent hover:border-border-color/50 hover:bg-black/10"}`}
             >
               <Maximize size={14} /> <span>focus</span>
             </button>
@@ -1582,12 +1663,42 @@ const App = () => {
       <div className="flex flex-1 overflow-hidden relative">
         {/* EDITOR AREA */}
         <main className="flex-1 flex flex-col relative overflow-hidden bg-transparent z-10 transition-all duration-500">
-          {activeNote.viewMode === "markdown" ? (
+          {!activeNote ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95 duration-500">
+              <div className="h-32 mb-8 text-muted flex items-center justify-center relative">
+                <FileText size={64} strokeWidth={1} className="absolute rotate-[-12deg] -translate-x-8 opacity-40" />
+                <FileText size={64} strokeWidth={1} className="absolute rotate-[12deg] translate-x-8 opacity-40 scale-90" />
+                <FileText size={80} strokeWidth={1.5} className="relative z-10 text-primary opacity-80" />
+              </div>
+              <h2 className="text-3xl font-black italic tracking-tighter text-primary mb-4">TABBY is Empty</h2>
+              <p className="text-sm text-muted max-w-sm mb-8 font-mono leading-relaxed">
+                You have no active tabs. Create a new note to start writing, or import an existing one.
+              </p>
+              <button
+                onClick={handleCreateNote}
+                className="group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent text-panel hover:scale-[1.05] active:scale-95 transition-all shadow-md"
+              >
+                <Plus size={16} className="group-hover:rotate-90 transition-transform duration-300" />
+                <span className="font-bold tracking-[0.1em] uppercase text-xs">Create New Note</span>
+              </button>
+            </div>
+          ) : activeNote.viewMode === "markdown" ? (
             <div
               className={`flex-1 overflow-y-auto custom-scrollbar scrollbar-flush ${isFocusMode ? "px-[10%] sm:px-[20%] py-12 sm:py-24" : "p-6 sm:p-12"}`}
             >
+              <div 
+                className="relative w-full mb-4 shrink-0 font-bold text-xl sm:text-2xl cursor-pointer"
+                onDoubleClick={() => handleUpdateNote(activeNote.id, { viewMode: "text" })}
+              >
+                <div className="relative w-full bg-transparent text-primary m-0 p-0">
+                  {title === "" ? "Untitled" : title.replace(/^#+\s*/, '')}
+                </div>
+              </div>
+
+              <div className="w-full h-[1px] bg-gray-800/50 mb-6 shrink-0 transition-colors" />
+
               <SimpleMarkdown
-                content={activeNote.content}
+                content={body}
                 onDoubleClick={() =>
                   handleUpdateNote(activeNote.id, { viewMode: "text" })
                 }
@@ -1646,9 +1757,10 @@ const App = () => {
           )}
 
           {/* FOOTER */}
-          <footer
-            className={`border-t border-border-color/20 flex items-center bg-panel shrink-0 transition-all duration-500 ease-in-out relative ${isFocusMode ? "h-0 opacity-0 overflow-hidden border-transparent" : "h-10 sm:h-9 opacity-100"}`}
-          >
+          {activeNote && (
+            <footer
+              className={`border-t border-border-color/20 flex items-center bg-panel shrink-0 transition-all duration-500 ease-in-out relative ${isFocusMode ? "h-0 opacity-0 overflow-hidden border-transparent" : "h-10 sm:h-9 opacity-100"}`}
+            >
             <div className="flex-1 w-full h-full flex items-center justify-between px-6 sm:px-8">
               <div className="flex items-center gap-4 sm:gap-6 min-w-max py-2">
                 <div className="flex items-center gap-2 opacity-60 px-3 py-1 bg-black/5 rounded-md border border-border-color/10 cursor-default">
@@ -1838,142 +1950,251 @@ const App = () => {
                 </div>
               </div>
             </div>
-          </footer>
+            </footer>
+          )}
         </main>
 
         {/* SIDEBAR */}
         <aside
-          className={`relative border-l flex flex-col bg-panel shrink-0 transition-[width,opacity] duration-500 ease-in-out z-10 ${isFocusMode ? "w-0 opacity-0 overflow-hidden border-transparent" : "opacity-100"}`}
+          className={`relative flex flex-col bg-panel shrink-0 transition-[width,opacity] duration-500 ease-in-out z-10 ${sidebarMode === "notes" ? "border-l" : "border-l"} ${isFocusMode ? "w-0 opacity-0 overflow-hidden border-transparent" : "opacity-100"}`}
           style={
             !isFocusMode
               ? {
-                  width: isSidebarMinimized ? "72px" : `${sidebarWidth}px`,
+                  width: isSidebarMinimized ? "72px" : sidebarMode === "format" ? "300px" : `${sidebarWidth}px`,
                 }
               : {}
           }
         >
-          {!isSidebarMinimized && !isFocusMode && (
+          {/* DRAG HANDLE & TOGGLE */}
+          {!isFocusMode && (
             <div
               onMouseDown={startResizing}
-              className="absolute left-0 top-0 bottom-0 w-[2px] cursor-col-resize hover:bg-yellow-500/20 z-20"
-            />
-          )}
-
-          <div
-            className={`flex flex-col h-full ${isSidebarMinimized ? "items-center py-6" : "p-6 lg:p-8"}`}
-          >
-            <div
-              className={`flex items-center mb-10 ${isSidebarMinimized ? "flex-col gap-6" : "justify-between w-full"}`}
+              className={`absolute left-0 top-0 bottom-0 w-[4px] -translate-x-[2px] z-20 flex items-center justify-center group ${sidebarMode === "format" ? "" : "cursor-col-resize hover:bg-yellow-500/20"}`}
             >
-              <div className="flex-1 w-full flex justify-center sm:justify-start">
-                <Tooltip text="Shortcut: Ctrl+T" position="right">
-                  <button
-                    onClick={handleCreateNote}
-                    className="group transition-all flex items-center gap-3 cursor-pointer active:scale-[0.98] px-2 py-1.5 rounded-xl hover:bg-black/10 w-full justify-center sm:justify-start"
-                  >
-                    <div className="p-2 rounded-lg bg-accent text-panel transition-colors ring-1 ring-border-color shadow-sm group-hover:ring-accent/50 group-hover:shadow-md flex-shrink-0">
-                      <Plus size={16} />
-                    </div>
-                    {!isSidebarMinimized && (
-                      <span className="text-[10px] font-bold tracking-[0.3em] text-primary group-hover:text-accent transition-colors">
-                        NEW NOTE
-                      </span>
-                    )}
-                  </button>
-                </Tooltip>
-              </div>
               <button
-                onClick={() => setIsSidebarMinimized(!isSidebarMinimized)}
-                className="opacity-40 hover:opacity-100 hover:text-accent hover:bg-black/10 rounded-lg transition-all p-2 cursor-pointer active:scale-95 border border-transparent hover:border-border-color/50 flex-shrink-0"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => {
+                  if (sidebarMode === "format") {
+                    showToast("Sidebar width is locked in Format Mode", "info");
+                  } else {
+                    setIsSidebarMinimized(!isSidebarMinimized);
+                  }
+                }}
+                className={`absolute left-0 -translate-x-[12px] w-6 h-12 bg-panel border border-border-color rounded-l-full flex items-center justify-center text-muted hover:text-primary transition-all shadow-sm ${sidebarMode === "format" ? "cursor-not-allowed opacity-30" : "cursor-pointer opacity-50 hover:opacity-100"}`}
               >
-                {isSidebarMinimized ? (
-                  <ChevronLeft size={14} />
+                {sidebarMode === "format" ? (
+                  <Lock size={12} className="ml-1" />
+                ) : isSidebarMinimized ? (
+                  <ChevronLeft size={14} className="ml-1" />
                 ) : (
-                  <ChevronRight size={14} />
+                  <ChevronRight size={14} className="ml-1" />
                 )}
               </button>
             </div>
+          )}
+
+          <div
+            className={`flex flex-col h-full overflow-hidden ${isSidebarMinimized ? "items-center py-6" : "p-6 lg:p-8"}`}
+          >
+            <div
+              className={`flex items-center mb-8 w-full gap-2 justify-center ${isSidebarMinimized ? "hidden" : ""}`}
+            >
+              <div className="flex bg-black/5 p-1 rounded-full w-full relative">
+                <div
+                  className="absolute top-1 bottom-1 bg-panel shadow-sm rounded-full transition-all duration-300"
+                  style={{
+                    left: sidebarMode === "notes" ? "0.25rem" : "calc(50% - 0.25rem)",
+                    width: "50%",
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    setSidebarMode("notes");
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold z-10 transition-colors ${sidebarMode === "notes" ? "text-primary" : "text-muted hover:text-primary"}`}
+                >
+                  <ListIcon size={14} /> Notes
+                </button>
+                <button
+                  onClick={() => {
+                    if (notes.length === 0) return;
+                    setSidebarMode("format");
+                    if (isSidebarMinimized) setIsSidebarMinimized(false);
+                  }}
+                  disabled={notes.length === 0}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold z-10 transition-colors ${sidebarMode === "format" ? "text-primary" : notes.length === 0 ? "text-muted/30 cursor-not-allowed" : "text-muted hover:text-primary"}`}
+                >
+                  <Wand2 size={14} /> Format
+                </button>
+              </div>
+              <Tooltip text="Create Note" position="bottom" className="shrink-0 flex">
+                <button
+                  onClick={handleCreateNote}
+                  className="p-2.5 rounded-full bg-accent/10 border border-accent/20 text-accent hover:bg-accent hover:text-panel transition-all"
+                >
+                  <Plus size={16} />
+                </button>
+              </Tooltip>
+            </div>
+            {isSidebarMinimized && (
+              <div className="flex justify-center mb-8">
+                <button
+                  onClick={() => {
+                    setSidebarMode("notes");
+                    handleCreateNote();
+                  }}
+                  className="p-3 rounded-full bg-accent text-panel hover:scale-105 transition-transform"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            )}
 
             <div
               className={`flex flex-col ${isSidebarMinimized ? "gap-4" : "gap-3"} overflow-y-auto custom-scrollbar flex-1 pb-4`}
             >
-              {notes.map((note) => {
-                // Smart Title Generation
-                const preview = getNotePreview(note.content);
-                const words = note.content.split(/\s+/).filter(Boolean);
-                const tooltipText =
-                  words.slice(0, 80).join(" ") +
-                  (words.length > 80 ? "..." : "");
+              {sidebarMode === "notes" ? (
+                notes.length > 0 ? (
+                  notes.map((note) => {
+                    // Smart Title Generation
+                    const preview = getNotePreview(note.content);
+                    const words = note.content.split(/\s+/).filter(Boolean);
+                    const tooltipText =
+                      words.slice(0, 80).join(" ") +
+                      (words.length > 80 ? "..." : "");
 
-                return (
-                  <React.Fragment key={note.id}>
-                    <Tooltip
-                      text={tooltipText || "Empty note..."}
-                      position="right"
-                      className="w-full flex"
-                      delay={2000}
-                    >
-                      <div
-                        onClick={() => setActiveNoteId(note.id)}
-                        className={`w-full relative group transition-all cursor-pointer ${activeNoteId === note.id ? "opacity-100" : "opacity-30 hover:opacity-60"} ${!isSidebarMinimized ? "pl-4 border-solid border-l-2" : ""}`}
-                        style={
-                          !isSidebarMinimized
-                            ? {
-                                borderLeftColor:
-                                  activeNoteId === note.id
-                                    ? note.color === COLORS.accent
-                                      ? "var(--accent)"
-                                      : note.color
-                                    : "transparent",
-                              }
-                            : {}
-                        }
-                      >
-                        {isSidebarMinimized ? (
-                          <div className="relative flex justify-center">
-                            <div
-                              className={`p-3 rounded-lg flex items-center justify-center transition-all ${activeNoteId === note.id ? "bg-primary/5 border border-primary/20" : "border border-transparent"}`}
-                            >
-                              <FileText
-                                size={20}
-                                className={
-                                  note.color === COLORS.accent
-                                    ? "text-accent"
-                                    : ""
-                                }
-                                style={
-                                  note.color !== COLORS.accent
-                                    ? { color: note.color }
-                                    : {}
-                                }
-                              />
-                            </div>
+                    return (
+                      <React.Fragment key={note.id}>
+                        <Tooltip
+                          text={tooltipText || "Empty note..."}
+                          position="right"
+                          className="w-full flex"
+                          delay={2000}
+                        >
+                          <div
+                            onClick={() => setActiveNoteId(note.id)}
+                            className={`w-full relative group transition-all cursor-pointer ${activeNoteId === note.id ? "opacity-100" : "opacity-30 hover:opacity-60"} ${!isSidebarMinimized ? "pl-4 border-solid border-l-2" : ""}`}
+                            style={
+                              !isSidebarMinimized
+                                ? {
+                                    borderLeftColor:
+                                      activeNoteId === note.id
+                                        ? note.color === COLORS.accent
+                                          ? "var(--accent)"
+                                          : note.color
+                                        : "transparent",
+                                  }
+                                : {}
+                            }
+                          >
+                            {isSidebarMinimized ? (
+                              <div className="relative flex justify-center">
+                                <div
+                                  className={`p-3 rounded-lg flex items-center justify-center transition-all ${activeNoteId === note.id ? "bg-primary/5 border border-primary/20" : "border border-transparent"}`}
+                                >
+                                  <FileText
+                                    size={20}
+                                    className={
+                                      note.color === COLORS.accent
+                                        ? "text-accent"
+                                        : ""
+                                    }
+                                    style={
+                                      note.color !== COLORS.accent
+                                        ? { color: note.color }
+                                        : {}
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col">
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="text-[10px] font-bold text-primary truncate max-w-[70%]">
+                                    {preview.title}
+                                  </span>
+                                  <Trash2
+                                    size={11}
+                                    className="opacity-0 group-hover:opacity-100 text-red-500 transition-opacity flex-shrink-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDeletePromptId(note.id);
+                                    }}
+                                  />
+                                </div>
+                                <p className="text-[10px] line-clamp-2 leading-relaxed font-light opacity-80">
+                                  {preview.snippet || "Empty"}
+                                </p>
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          <div className="flex flex-col">
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="text-[10px] font-bold text-primary truncate max-w-[70%]">
-                                {preview.title}
-                              </span>
-                              <Trash2
-                                size={11}
-                                className="opacity-0 group-hover:opacity-100 text-red-500 transition-opacity flex-shrink-0"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeletePromptId(note.id);
-                                }}
-                              />
-                            </div>
-                            <p className="text-[10px] line-clamp-2 leading-relaxed font-light opacity-80">
-                              {preview.snippet || "Empty"}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </Tooltip>
-                  </React.Fragment>
-                );
-              })}
+                        </Tooltip>
+                      </React.Fragment>
+                    );
+                  })
+                ) : (
+                  !isSidebarMinimized && (
+                    <div className="flex flex-col items-center justify-center p-6 text-center opacity-50 mt-10">
+                      <FileText size={32} className="mb-4 text-muted" />
+                      <p className="text-xs mb-4">No notes found.</p>
+                      <button onClick={handleCreateNote} className="px-4 py-2 bg-accent text-panel rounded-lg text-xs font-bold uppercase tracking-wider hover:scale-105 transition-transform flex items-center gap-2">
+                        <Plus size={14} /> Create Note
+                      </button>
+                    </div>
+                  )
+                )
+              ) : (
+                <div className={`flex flex-col gap-6 ${isSidebarMinimized ? "items-center" : ""}`}>
+                  {!isSidebarMinimized && (
+                    <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted mb-2">Text Formatting</div>
+                  )}
+                  {/* Inline format row */}
+                  <div className={`flex bg-panel border-y border-border-color shadow-sm ${isSidebarMinimized ? "flex-col w-min border-x rounded-xl" : "w-full -mx-6 px-6"}`}>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("**", "**", "Bold"); }} className={`flex-1 ${isSidebarMinimized ? "p-3 border-b border-border-color last:border-0" : "py-3"} hover:bg-black/5 text-primary transition-colors flex items-center justify-center`} title="Bold"><Bold size={16} /></button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("_", "_", "Italic"); }} className={`flex-1 ${isSidebarMinimized ? "p-3 border-b border-border-color last:border-0" : "py-3"} hover:bg-black/5 text-primary transition-colors flex items-center justify-center`} title="Italic"><Italic size={16} /></button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("~~", "~~", "Strikethrough"); }} className={`flex-1 ${isSidebarMinimized ? "p-3 border-b border-border-color last:border-0" : "py-3"} hover:bg-black/5 text-primary transition-colors flex items-center justify-center`} title="Strikethrough"><Strikethrough size={16} /></button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("`", "`", "code"); }} className={`flex-1 ${isSidebarMinimized ? "p-3 border-b border-border-color last:border-0" : "py-3"} hover:bg-black/5 text-primary transition-colors flex items-center justify-center`} title="Inline Code"><Code size={16} /></button>
+                  </div>
+
+                  {!isSidebarMinimized && (
+                    <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted mt-2 mb-2">Blocks & Layout</div>
+                  )}
+                  <div className="flex flex-col gap-2 w-full">
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("# ", "", "Heading 1"); }} className={`w-full flex items-center gap-3 p-3 bg-panel border-border-color border rounded-xl hover:bg-black/5 transition-colors group ${isSidebarMinimized ? "justify-center" : ""}`} title="Heading 1">
+                      <Heading1 size={18} className="text-muted group-hover:text-primary transition-colors" />
+                      {!isSidebarMinimized && <span className="text-sm font-medium">Heading 1</span>}
+                    </button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("## ", "", "Heading 2"); }} className={`w-full flex items-center gap-3 p-3 bg-panel border-border-color border rounded-xl hover:bg-black/5 transition-colors group ${isSidebarMinimized ? "justify-center" : ""}`} title="Heading 2">
+                      <Heading2 size={18} className="text-muted group-hover:text-primary transition-colors" />
+                      {!isSidebarMinimized && <span className="text-sm font-medium">Heading 2</span>}
+                    </button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("\n> ", "", "Quote"); }} className={`w-full flex items-center gap-3 p-3 bg-panel border-border-color border rounded-xl hover:bg-black/5 transition-colors group ${isSidebarMinimized ? "justify-center" : ""}`} title="Blockquote">
+                      <Quote size={18} className="text-muted group-hover:text-primary transition-colors" />
+                      {!isSidebarMinimized && <span className="text-sm font-medium">Blockquote</span>}
+                    </button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("\n- ", "", "List item"); }} className={`w-full flex items-center gap-3 p-3 bg-panel border-border-color border rounded-xl hover:bg-black/5 transition-colors group ${isSidebarMinimized ? "justify-center" : ""}`} title="Bulleted List">
+                      <ListIcon size={18} className="text-muted group-hover:text-primary transition-colors" />
+                      {!isSidebarMinimized && <span className="text-sm font-medium">Bulleted List</span>}
+                    </button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("\n- [ ] ", "", "Task"); }} className={`w-full flex items-center gap-3 p-3 bg-panel border-border-color border rounded-xl hover:bg-black/5 transition-colors group ${isSidebarMinimized ? "justify-center" : ""}`} title="Checkbox List">
+                      <ListIcon size={18} className="text-muted group-hover:text-primary transition-colors" />
+                      {!isSidebarMinimized && <span className="text-sm font-medium">Checkbox List</span>}
+                    </button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("\n- [x] ", "", "Done Task"); }} className={`w-full flex items-center gap-3 p-3 bg-panel border-border-color border rounded-xl hover:bg-black/5 transition-colors group ${isSidebarMinimized ? "justify-center" : ""}`} title="Checked Task">
+                      <CheckSquare size={18} className="text-muted group-hover:text-primary transition-colors" />
+                      {!isSidebarMinimized && <span className="text-sm font-medium">Checked Task</span>}
+                    </button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("\n```\n", "\n```\n", "code block"); }} className={`w-full flex items-center gap-3 p-3 bg-panel border-border-color border rounded-xl hover:bg-black/5 transition-colors group ${isSidebarMinimized ? "justify-center" : ""}`} title="Code Block">
+                      <Code size={18} className="text-muted group-hover:text-primary transition-colors" />
+                      {!isSidebarMinimized && <span className="text-sm font-medium">Code Block</span>}
+                    </button>
+                    <button onMouseDown={(e) => { e.preventDefault(); applyFormat("\n| Header | Title |\n| ------------- | ------------- |\n| Cell | Cell |\n", ""); }} className={`w-full flex items-center gap-3 p-3 bg-panel border-border-color border rounded-xl hover:bg-black/5 transition-colors group ${isSidebarMinimized ? "justify-center" : ""}`} title="Table">
+                      <Table size={18} className="text-muted group-hover:text-primary transition-colors" />
+                      {!isSidebarMinimized && <span className="text-sm font-medium">Table</span>}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </aside>

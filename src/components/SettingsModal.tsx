@@ -275,7 +275,7 @@ export const SettingsModal = ({
                 TABBY
               </h2>
               <p className="text-xs font-mono text-primary/50 mb-8 uppercase tracking-widest">
-                Version 1.0.0
+                Version 2.2.0
               </p>
 
               <div className="space-y-4 w-full max-w-sm">

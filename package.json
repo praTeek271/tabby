@@ -1,7 +1,7 @@
 {
   "name": "tabby",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.2.0",
   "author": "prateek kumar singh",
   "repository": {
     "type": "git",
@@ -57,6 +57,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-markdown": "^10.1.0",
+    "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "vite": "^6.2.3"
   },

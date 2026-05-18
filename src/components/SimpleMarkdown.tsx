@@ -1,12 +1,67 @@
-import React from 'react';
-import { MousePointer2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { MousePointer2, Check, Copy } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 
 interface SimpleMarkdownProps {
   content: string;
   onDoubleClick: () => void;
 }
+
+const CodeBlock = ({ node, children, ...props }: any) => {
+  const [copied, setCopied] = useState(false);
+
+  const childArray = React.Children.toArray(children);
+  const codeChild = childArray.find((child: any) => child?.type === 'code' || child?.props?.node?.tagName === 'code') as any;
+  const className = codeChild?.props?.className || '';
+  const match = /language-(\w+)/.exec(className);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // In react-markdown, the actual string content is typically in codeChild.props.children
+    // If it is an array of strings, we join it.
+    let textToCopy = '';
+    if (codeChild?.props?.children) {
+      if (Array.isArray(codeChild.props.children)) {
+        textToCopy = codeChild.props.children.join('');
+      } else {
+        textToCopy = codeChild.props.children.toString();
+      }
+    }
+
+    if (textToCopy) {
+      navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="relative group/code my-4">
+      <div className="absolute top-2 right-2 flex items-center gap-1 z-10 opacity-0 group-hover/code:opacity-100 transition-opacity">
+        {match && (
+           <span className="bg-main/90 text-[10px] px-2 py-1 uppercase tracking-wider text-muted rounded-md border border-border-color backdrop-blur-sm shadow-sm select-none">
+             {match[1]}
+           </span>
+        )}
+        <button
+          onClick={handleCopy}
+          className="bg-main/90 hover:bg-panel text-muted hover:text-primary p-1.5 rounded-md border border-border-color transition-colors shadow-sm cursor-pointer"
+          title="Copy code"
+        >
+          {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+        </button>
+      </div>
+      <pre 
+        className="bg-main/80 p-4 rounded-lg overflow-x-auto border border-border-color text-accent/90 font-mono text-sm leading-relaxed" 
+        {...props}
+      >
+        {children}
+      </pre>
+    </div>
+  );
+};
 
 export const SimpleMarkdown = ({ content, onDoubleClick }: SimpleMarkdownProps) => {
   return (
@@ -22,38 +77,19 @@ export const SimpleMarkdown = ({ content, onDoubleClick }: SimpleMarkdownProps) 
       ) : (
         <div className="markdown-body custom-markdown">
           <ReactMarkdown 
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkBreaks]}
             components={{
               h1: ({node, ...props}) => <h1 className="text-2xl font-bold mt-8 mb-4 text-primary" {...props} />,
               h2: ({node, ...props}) => <h2 className="text-xl font-bold mt-6 mb-3 text-primary" {...props} />,
               h3: ({node, ...props}) => <h3 className="text-lg font-bold mt-4 mb-2 text-primary" {...props} />,
               p: ({node, ...props}) => <p className="mb-4" {...props} />,
-              ul: ({node, ...props}) => <ul className="list-disc ml-6 mb-4 opacity-90" {...props} />,
+              ul: ({node, className, ...props}) => <ul className={`ml-6 mb-4 opacity-90 ${className?.includes('contains-task-list') ? 'list-none ml-2' : 'list-disc'} ${className || ''}`} {...props} />,
               ol: ({node, ...props}) => <ol className="list-decimal ml-6 mb-4 opacity-90" {...props} />,
-              li: ({node, ...props}) => <li className="mb-1" {...props} />,
+              li: ({node, className, ...props}) => <li className={`mb-1 left-align ${className || ''}`} {...props} />,
               blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-accent/50 pl-4 my-4 italic opacity-80" {...props} />,
               strong: ({node, ...props}) => <strong className="text-primary font-bold" {...props} />,
               em: ({node, ...props}) => <em className="italic" {...props} />,
-              pre: ({node, children, ...props}: any) => {
-                // To get the language string from the child code element, if any
-                const childArray = React.Children.toArray(children);
-                const codeChild = childArray.find((child: any) => child?.type === 'code' || child?.props?.node?.tagName === 'code') as any;
-                const className = codeChild?.props?.className || '';
-                const match = /language-(\w+)/.exec(className);
-                
-                return (
-                  <div className="relative group/code my-4">
-                    {match && (
-                      <div className="absolute top-0 right-0 bg-main text-xs px-2 py-1 uppercase tracking-wider text-muted rounded-bl-md z-10 border-b border-l border-border-color">
-                        {match[1]}
-                      </div>
-                    )}
-                    <pre className="bg-main/80 p-4 rounded-lg overflow-x-auto border border-border-color text-accent/90 font-mono text-sm leading-relaxed" {...props}>
-                      {children}
-                    </pre>
-                  </div>
-                );
-              },
+              pre: CodeBlock,
               code: ({node, className, children, ...props}: any) => {
                 const isBlock = node?.position?.start?.line !== node?.position?.end?.line;
                 const match = /language-(\w+)/.exec(className || '');
@@ -77,6 +113,20 @@ export const SimpleMarkdown = ({ content, onDoubleClick }: SimpleMarkdownProps) 
               tr: ({node, ...props}) => <tr className="hover:bg-primary/5 transition-colors" {...props} />,
               hr: ({node, ...props}) => <hr className="my-8 border-border-color" {...props} />,
               a: ({node, ...props}) => <a className="text-accent hover:underline" target="_blank" rel="noopener noreferrer" {...props} />,
+              input: ({node, ...props}) => {
+                if (props.type === 'checkbox') {
+                  return (
+                    <input 
+                      type="checkbox" 
+                      className="w-4 h-4 mr-3 align-middle appearance-none bg-panel/30 border-2 border-muted/70 hover:border-accent transition-colors rounded-[4px] checked:bg-accent checked:border-accent relative cursor-default disabled:opacity-100 shadow-sm
+                                 after:content-[''] after:absolute after:hidden checked:after:block after:left-[4px] after:top-[1px] after:w-[5px] after:h-[9px] after:border-solid after:border-panel after:border-r-2 after:border-b-2 after:rotate-45"
+                      {...props} 
+                      disabled={true}
+                    />
+                  );
+                }
+                return <input {...props} />;
+              },
             }}
           >
             {content}
