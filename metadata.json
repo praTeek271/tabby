@@ -1,0 +1,6 @@
+{
+  "name": "Tabby",
+  "description": "A minimalist, functional monospace notepad with actual UI tabs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Primitive Definition
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+
+    // Blueprint Validations
+    function isValidNote(data) {
+      return data.keys().hasAll(['id', 'userId', 'content', 'timestamp', 'color', 'viewMode']) 
+        && data.keys().size() == 6
+        && data.id is string
+        && data.userId is string && data.userId.size() <= 128 && data.userId == request.auth.uid
+        && data.content is string && data.content.size() <= 1048576
+        && data.timestamp is number
+        && data.color is string && data.color.size() <= 64
+        && data.viewMode is string && data.viewMode in ['text', 'markdown'];
+    }
+
+    match /users/{userId}/notes/{noteId} {
+      allow read: if isSignedIn() && userId == request.auth.uid;
+      
+      allow create: if isSignedIn() 
+        && isValidId(userId) && isValidId(noteId)
+        && userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && isValidNote(incoming());
+
+      allow update: if isSignedIn()
+        && userId == request.auth.uid
+        && isValidId(userId) && isValidId(noteId)
+        && isValidNote(incoming())
+        && incoming().userId == existing().userId
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['content', 'timestamp', 'color', 'viewMode'])
+        );
+
+      allow delete: if isSignedIn() && userId == request.auth.uid;
+      
+      // Specifically required for allow list if client queries the subcollection
+      allow list: if isSignedIn() && userId == request.auth.uid;
+    }
+  }
+}

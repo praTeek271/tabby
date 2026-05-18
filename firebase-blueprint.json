@@ -1,0 +1,39 @@
+{
+  "entities": {
+    "Note": {
+      "title": "Note",
+      "description": "A single note document.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who owns this note"
+        },
+        "content": {
+          "type": "string",
+          "description": "The raw markdown content of the note"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Epoch timestamp of the last edit"
+        },
+        "color": {
+          "type": "string",
+          "description": "Tag color for the note"
+        },
+        "viewMode": {
+          "type": "string",
+          "enum": ["text", "markdown"],
+          "description": "The user's preferred view mode for this note"
+        }
+      },
+      "required": ["userId", "content", "timestamp", "color", "viewMode"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/Note" },
+      "description": "Notes belong to a specific user"
+    }
+  }
+}
